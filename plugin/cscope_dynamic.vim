@@ -38,12 +38,20 @@ let g:cscope_dynamic_loaded = 1
 if exists("g:cscopedb_big_file")
     let s:big_file = g:cscopedb_big_file
 else
-    let s:big_file = ".cscope.big"
+    let s:big_file = findfile(".cscope.big", ".;")
+    if empty(s:big_file)
+        let s:root_path = ""
+        let s:root_dir = getcwd() . "/"
+        let s:big_file = s:root_dir . ".cscope.big"
+    else
+        let s:root_path = fnamemodify(s:big_file, ":p:h")
+        let s:root_dir = s:root_path . "/"
+    endif
 endif
 if exists("g:cscopedb_small_file")
     let s:small_file = g:cscopedb_small_file
 else
-    let s:small_file = ".cscope.small"
+    let s:small_file = s:root_dir . ".cscope.small"
 endif
 if exists("g:cscopedb_auto_init")
     let s:auto_init = g:cscopedb_auto_init
@@ -53,12 +61,12 @@ endif
 if exists("g:cscopedb_extra_files")
     let s:extra_files = g:cscopedb_extra_files
 else
-    let s:extra_files = ".cscope.extra.files"
+    let s:extra_files = s:root_dir . ".cscope.extra.files"
 endif
 if exists("g:cscopedb_src_dirs_file")
     let s:src_dirs_file = g:cscopedb_src_dirs_file
 else
-    let s:src_dirs_file = ".cscope.dirs.file"
+    let s:src_dirs_file = s:root_dir . ".cscope.dirs.file"
 endif
 if exists("g:cscopedb_auto_files")
     let s:auto_files = g:cscopedb_auto_files
@@ -73,7 +81,7 @@ endif
 if exists("g:cscopedb_lock_file")
     let s:lock_file = g:cscopedb_lock_file
 else
-    let s:lock_file = ".cscopedb.lock"
+    let s:lock_file = s:root_dir . ".cscopedb.lock"
 endif
 if exists("g:cscopedb_big_min_interval")
     let s:big_min_interval = g:cscopedb_big_min_interval
@@ -115,9 +123,15 @@ function! s:smallListUpdate(file)
     " If file moves to small DB then we also do a big DB update so
     " we don't end up with duplicate lookups.
     if s:resolve_links
-        let path = fnamemodify(resolve(expand(a:file)), ":p:.")
+        let path = fnamemodify(resolve(expand(a:file)), ":p")
     else
-        let path = fnamemodify(expand(a:file), ":p:.")
+        let path = fnamemodify(expand(a:file), ":p")
+    endif
+    if stridx(path, s:root_dir) == 0
+        let path = strpart(path, strlen(s:root_dir))
+    else
+        " error
+        return
     endif
     if !has_key(s:small_file_dict, path)
         let s:small_file_dict[path] = 1
@@ -154,7 +168,9 @@ function! s:dbUpdate()
     " after the small updates are done.
     "
     if s:small_update == 1
-        let cmd .= "(cscope -kbR "
+        let cmd .= "("
+        let cmd .= "cd " . s:root_dir . "; "
+        let cmd .= "cscope -kbR "
         if s:full_update_force
             let cmd .= "-u "
         else 
@@ -162,6 +178,7 @@ function! s:dbUpdate()
         endif
         let cmd .= "-i".s:small_file.".files -f".s:small_file
         let cmd .= "; rm ".s:lock_file
+        let cmd .= "; cd -"
         let cmd .= ") &>/dev/null &"
 
         let s:small_update = 2
@@ -179,6 +196,7 @@ function! s:dbUpdate()
 
         let cmd .= "("
         let cmd .= "set -f;" " turn off sh globbing
+        let cmd .= "cd " . s:root_dir . "; "
         if s:auto_files
             " Do the find command a 'portable' way
             let cmd .= "find ".src_dirs." -name *.c   -or -name *.h -or"
@@ -226,6 +244,7 @@ function! s:dbUpdate()
         endif
         let cmd .= "-i".s:big_file.".files -f".s:big_file
         let cmd .= "; rm ".s:lock_file
+        let cmd .= "; cd -"
         let cmd .= ") &>/dev/null &"
 
         let s:big_update = 2
@@ -250,7 +269,7 @@ function! s:dbReset()
 
     if s:small_update == 2
         if !s:small_init
-            silent execute "cs add " . s:small_file
+            silent execute "cs add " . s:small_file . " " . s:root_path
             let s:small_init = 1
         else
             silent cs reset
@@ -258,7 +277,7 @@ function! s:dbReset()
         let s:small_update = 0
     elseif s:big_update == 2
         if !s:big_init
-            silent execute "cs add " . s:big_file
+            silent execute "cs add " . s:big_file . " " . s:root_path
             let s:big_init = 1
         else
             silent cs reset
@@ -307,11 +326,11 @@ function! s:init()
 
     " If they DBs exist, then add them before the update.
     if filereadable(expand(s:big_file))
-        silent execute "cs add " . s:big_file
+        silent execute "cs add " . s:big_file . " " . s:root_path
         let s:big_init = 1
     endif
     if filereadable(expand(s:small_file))
-        silent execute "cs add " . s:small_file
+        silent execute "cs add " . s:small_file . " " . s:root_path
         let s:small_init = 1
 
         " Seed the cscopedb_small_file_dict dictionary with the file list
@@ -348,6 +367,7 @@ endfunction
 " Section: Maps {{{1
 "
 noremap <unique> <Plug>CscopeDBInit :call <SID>initForce()<CR>
+noremap <unique> <Plug>CscopeDBUpdate :call <SID>dbFullUpdate()<CR>
 
 " Autoinit: {{{1
 "
