@@ -122,17 +122,13 @@ function! s:smallListUpdate(file)
 
     " If file moves to small DB then we also do a big DB update so
     " we don't end up with duplicate lookups.
+    let cmd = "realpath --relative-to=" . s:root_dir . " "
     if s:resolve_links
-        let path = fnamemodify(resolve(expand(a:file)), ":p")
+        let cmd .= resolve(expand(a:file))
     else
-        let path = fnamemodify(expand(a:file), ":p")
+        let cmd .= expand(a:file)
     endif
-    if stridx(path, s:root_dir) == 0
-        let path = strpart(path, strlen(s:root_dir))
-    else
-        " error
-        return
-    endif
+    let path = systemlist(cmd)[0]
     if !has_key(s:small_file_dict, path)
         let s:small_file_dict[path] = 1
         let s:big_update = 1
