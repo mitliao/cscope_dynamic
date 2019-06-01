@@ -40,12 +40,10 @@ if exists("g:cscopedb_big_file")
 else
     let s:big_file = findfile(".cscope.big", ".;")
     if empty(s:big_file)
-        let s:root_path = ""
         let s:root_dir = getcwd() . "/"
         let s:big_file = s:root_dir . ".cscope.big"
     else
-        let s:root_path = fnamemodify(s:big_file, ":p:h")
-        let s:root_dir = s:root_path . "/"
+        let s:root_dir = fnamemodify(s:big_file, ":p:h") . "/"
     endif
 endif
 if exists("g:cscopedb_small_file")
@@ -113,6 +111,10 @@ function! s:runShellCommand(cmd)
     endif
 endfunction
 
+function! s:getRelativePath(path, rpath)
+    return systemlist("realpath --relative-to=" . a:rpath . " " . a:path)[0]
+endfunction
+
 " Add the file to the small DB file list. {{{2
 " This moves the file to the small cscope DB and triggers an update
 " of the necessary databases.
@@ -122,13 +124,11 @@ function! s:smallListUpdate(file)
 
     " If file moves to small DB then we also do a big DB update so
     " we don't end up with duplicate lookups.
-    let cmd = "realpath --relative-to=" . s:root_dir . " "
     if s:resolve_links
-        let cmd .= resolve(expand(a:file))
+        let path = s:getRelativePath(resolve(expand(a:file)), s:root_dir)
     else
-        let cmd .= expand(a:file)
+        let path = s:getRelativePath(expand(a:file), s:root_dir)
     endif
-    let path = systemlist(cmd)[0]
     if !has_key(s:small_file_dict, path)
         let s:small_file_dict[path] = 1
         let s:big_update = 1
@@ -263,9 +263,10 @@ function! s:dbReset()
         return
     endif
 
+    let rel_path = s:getRelativePath(s:root_dir, getcwd())
     if s:small_update == 2
         if !s:small_init
-            silent execute "cs add " . s:small_file . " " . s:root_path
+            silent execute "cs add " . s:small_file . " " . rel_path
             let s:small_init = 1
         else
             silent cs reset
@@ -273,7 +274,7 @@ function! s:dbReset()
         let s:small_update = 0
     elseif s:big_update == 2
         if !s:big_init
-            silent execute "cs add " . s:big_file . " " . s:root_path
+            silent execute "cs add " . s:big_file . " " . rel_path
             let s:big_init = 1
         else
             silent cs reset
@@ -319,14 +320,15 @@ function! s:init()
     let s:big_init = 0
     let s:big_last_update = 0
     let s:small_init = 0
+    let rel_path = s:getRelativePath(s:root_dir, getcwd())
 
     " If they DBs exist, then add them before the update.
     if filereadable(expand(s:big_file))
-        silent execute "cs add " . s:big_file . " " . s:root_path
+        silent execute "cs add " . s:big_file . " " . rel_path
         let s:big_init = 1
     endif
     if filereadable(expand(s:small_file))
-        silent execute "cs add " . s:small_file . " " . s:root_path
+        silent execute "cs add " . s:small_file . " " . rel_path
         let s:small_init = 1
 
         " Seed the cscopedb_small_file_dict dictionary with the file list
